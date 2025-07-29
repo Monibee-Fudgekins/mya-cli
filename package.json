@@ -1,0 +1,51 @@
+{
+  "name": "mya-cli",
+  "version": "0.1.1",
+  "description": "AI-powered stock and options analysis CLI tool. Fully automated trading intelligence platform.",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "mya": "bin/mya.cjs"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "stocks",
+    "options",
+    "trading",
+    "analysis",
+    "ai",
+    "cli",
+    "automated",
+    "volatility",
+    "earnings",
+    "announcements"
+  ],
+  "author": "Monibee-Fudgekins",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^14.0.0",
+    "inquirer": "^9.3.7",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.8",
+    "@types/node": "^24.0.3",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Monibee-Fudgekins/mya-cli.git"
+  }
+}
