@@ -1,6 +1,6 @@
 {
   "name": "mya-cli-ai",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "AI-powered stock and options analysis CLI tool. Fully automated trading intelligence platform.",
   "type": "module",
   "main": "dist/cli.js",
