@@ -2,7 +2,7 @@
 
 Mya is a fully automated trading intelligence platform that combines real-time news analysis with advanced market data to identify high-probability options trades. Using AlphaVantage for news and economic data, Yahoo Finance for real-time prices, and Polygon.io for historical data and options chains, Mya's AI automatically discovers opportunities without requiring any user input—no stock symbols, no parameters, just intelligent recommendations.
 
-![Version](https://img.shields.io/badge/version-0.2.2-blue.svg)
+![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D16.0.0-green.svg)
 ![AI](https://img.shields.io/badge/AI-Powered-purple.svg)
 ![Automated](https://img.shields.io/badge/100%25-Automated-orange.svg)

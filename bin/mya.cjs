@@ -9,9 +9,9 @@ const cliPath = path.resolve(__dirname, '../dist/cli-http.js');
 // This ensures proper handling of interactive prompts
 const child = spawn(process.execPath, [cliPath, ...process.argv.slice(2)], {
   stdio: 'inherit',
-  // Ensure environment variables are passed through
-  env: process.env,
+  cwd: process.cwd(),
 });
 
-// Handle process exit
-child.on('exit', (code) => process.exit(code));
+child.on('exit', (code) => {
+  process.exit(code || 0);
+});
