@@ -1,51 +1,45 @@
 {
   "name": "mya-cli",
-  "version": "0.3.0",
-  "description": "AI-powered stock and options analysis CLI tool. Fully automated trading intelligence platform.",
+  "version": "0.9.1",
+  "description": "MYA - AI-Powered Stock & Options Analysis CLI Tool",
   "type": "module",
-  "main": "dist/cli.js",
+  "main": "dist/index.js",
   "bin": {
-    "mya": "bin/mya.cjs"
+    "mya": "./bin/mya.cjs"
   },
-  "scripts": {
-    "build": "tsc && chmod +x dist/cli.js"
+  "keywords": [
+    "stock-analysis",
+    "options-trading",
+    "ai-powered",
+    "financial-analysis",
+    "trading-cli",
+    "market-analysis",
+    "investment-tools"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Monibee-Fudgekins/mya-cli.git"
+  },
+  "homepage": "https://github.com/Monibee-Fudgekins/mya-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Monibee-Fudgekins/mya-cli/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   },
   "files": [
-    "dist",
-    "bin",
+    "bin/",
+    "dist/",
     "README.md",
     "LICENSE"
   ],
-  "keywords": [
-    "stocks",
-    "options",
-    "trading",
-    "analysis",
-    "ai",
-    "cli",
-    "automated",
-    "volatility",
-    "earnings",
-    "announcements"
-  ],
-  "author": "Monibee-Fudgekins",
-  "license": "MIT",
   "dependencies": {
-    "chalk": "^5.3.0",
+    "chalk": "^5.6.0",
     "commander": "^14.0.0",
-    "inquirer": "^9.3.7",
+    "inquirer": "^9.3.5",
+    "jose": "^6.0.11",
     "ora": "^8.0.1"
-  },
-  "devDependencies": {
-    "@types/inquirer": "^9.0.8",
-    "@types/node": "^24.0.3",
-    "typescript": "^5.3.3"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Monibee-Fudgekins/mya-cli.git"
   }
 }
