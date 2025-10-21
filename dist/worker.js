@@ -26,6 +26,7 @@ import { logger } from 'hono/logger';
 import { getJwtMiddleware, getRateLimitMiddleware } from './worker/middleware.js';
 import { proxyToBackend, proxyToBackendQueued } from './worker/proxy.js';
 import { RequestQueue } from './worker/queue.js';
+import { handleAuth, handleVerifyOtp, handleAuthVerify } from './worker/auth.js';
 const app = new Hono();
 app.use(logger());
 app.use(cors({
@@ -54,6 +55,39 @@ app.get('/health', (c) => {
         service: 'mya-gateway',
         version: '2.0.0',
     });
+});
+/**
+ * Test endpoint - Get OTP for testing (dev only)
+ * Only available in dev environment for testing
+ * In production, OTP is sent via email
+ */
+app.get('/test/otp/:methodId', async (c) => {
+    const env = c.env;
+    // Only allow in dev environment
+    if (env.ENVIRONMENT !== 'dev') {
+        return c.json({ error: 'Not available in production' }, 404);
+    }
+    try {
+        const methodId = c.req.param('methodId');
+        const kv = env.KV_NAMESPACE;
+        if (!kv) {
+            return c.json({ error: 'KV not available' }, 503);
+        }
+        const otpJson = await kv.get(`otp:${methodId}`);
+        if (!otpJson) {
+            return c.json({ error: 'OTP not found', methodId }, 404);
+        }
+        const otpData = JSON.parse(otpJson);
+        return c.json({
+            methodId,
+            email: otpData.email,
+            code: otpData.code,
+            expiresAt: otpData.expiresAt,
+        });
+    }
+    catch (error) {
+        return c.json({ error: 'Failed to retrieve OTP' }, 500);
+    }
 });
 /**
  * API Routes - All forward to mya-llm backend via proxy module
@@ -85,17 +119,21 @@ app.get('/learning-metrics', async (c) => {
     const env = c.env;
     return proxyToBackend(c, env, 'GET', '/api/v1/learning-metrics');
 });
+/**
+ * Authentication Endpoints - Handled Locally by Worker
+ * No backend call needed for auth flows
+ */
 app.post('/auth', async (c) => {
     const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/auth');
+    return handleAuth(c, env);
 });
 app.post('/auth/verify', async (c) => {
     const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/auth/verify');
+    return handleAuthVerify(c, env);
 });
 app.post('/verify-otp', async (c) => {
     const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/verify-otp');
+    return handleVerifyOtp(c, env);
 });
 app.get('/recommendations/open', async (c) => {
     const env = c.env;
@@ -116,6 +154,25 @@ app.post('/cmt', async (c) => {
 app.post('/benchmark', async (c) => {
     const env = c.env;
     return proxyToBackendQueued(c, env, 'POST', '/api/v1/benchmark');
+});
+/**
+ * Agent API routes - forward to mya-llm agent endpoints
+ */
+app.post('/agent/ingest', async (c) => {
+    const env = c.env;
+    return proxyToBackend(c, env, 'POST', '/api/v1/agent/ingest');
+});
+app.post('/agent/predict', async (c) => {
+    const env = c.env;
+    return proxyToBackend(c, env, 'POST', '/api/v1/agent/predict');
+});
+app.post('/agent/benchmark', async (c) => {
+    const env = c.env;
+    return proxyToBackend(c, env, 'POST', '/api/v1/agent/benchmark');
+});
+app.get('/agent/status', async (c) => {
+    const env = c.env;
+    return proxyToBackend(c, env, 'GET', '/api/v1/agent/status');
 });
 /**
  * Queue Management Endpoints

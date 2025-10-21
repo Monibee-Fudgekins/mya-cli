@@ -2,7 +2,7 @@
 
 Mya is an autonomous trading intelligence platform that makes **daily stock market predictions** using fresh, real-time data. The system automatically discovers high-probability options trades and volatile stocks by analyzing news sentiment, economic data, and technical indicators—no user input required, just intelligent daily recommendations.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.10.1-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D16.0.0-green.svg)
 ![AI](https://img.shields.io/badge/AI-Powered-purple.svg)
 ![Automated](https://img.shields.io/badge/Daily%20Predictions-orange.svg)

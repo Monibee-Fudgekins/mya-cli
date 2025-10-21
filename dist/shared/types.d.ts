@@ -122,6 +122,7 @@ export interface WorkerEnv {
     KV_NAMESPACE: any;
     MYA_LLM_URL: string;
     JWT_SECRET: string;
+    LLM_API_TOKEN: string;
     RATE_LIMIT_REQUESTS?: number;
     ENVIRONMENT?: string;
 }

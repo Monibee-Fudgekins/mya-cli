@@ -3,6 +3,15 @@
  * Purpose: Rate limiting and JWT authentication middleware for Cloudflare Worker
  * Dependencies: jose (JWT verification), Cloudflare Workers API
  * Used by: worker.ts
+ *
+ * Public Endpoints (no JWT required):
+ *   - /health, /api/v1/health
+ *   - /auth, /api/v1/auth (for initial login)
+ *   - /verify-otp, /api/v1/verify-otp (for OTP verification)
+ *   - /auth/verify, /api/v1/auth/verify (for token validation)
+ *   - /announcements, /api/v1/announcements (market announcements)
+ *
+ * All other endpoints require valid JWT Bearer token in Authorization header
  */
 import * as jose from 'jose';
 export async function checkRateLimit(env, userId) {
@@ -34,12 +43,21 @@ export function getJwtMiddleware(env) {
         '/api/v1/health',
         '/api/v1/auth',
         '/api/v1/verify-otp',
-        '/api/v1/auth/verify'
+        '/api/v1/auth/verify',
+        '/api/v1/announcements'
     ];
     return async (c, next) => {
         const path = c.req.path;
+        const method = c.req.method;
         // Check if this is a public endpoint
-        const isPublic = publicEndpoints.some(endpoint => path === endpoint || path.startsWith(endpoint + '/'));
+        // Match exact path or paths that start with the endpoint followed by a slash
+        const isPublic = publicEndpoints.some(endpoint => {
+            return path === endpoint || path.startsWith(endpoint + '/');
+        });
+        // Log for debugging
+        if (!isPublic) {
+            console.log(`[AUTH] Non-public endpoint: ${method} ${path}`);
+        }
         if (isPublic) {
             // Public endpoints don't need JWT verification
             c.set('userId', 'anonymous');

@@ -1,6 +1,6 @@
 {
   "name": "mya-cli",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "MYA - AI-Powered Stock & Options Analysis CLI Tool",
   "type": "module",
   "main": "dist/index.js",

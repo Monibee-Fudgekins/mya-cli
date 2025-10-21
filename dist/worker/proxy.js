@@ -20,8 +20,18 @@
 import { RequestQueue } from './queue.js';
 export async function proxyToBackend(c, env, method, path) {
     const myaLlmUrl = env.MYA_LLM_URL;
+    const llmApiToken = env.LLM_API_TOKEN;
     if (!myaLlmUrl) {
-        return c.json({ error: 'Backend service not configured' }, 503);
+        return c.json({
+            error: 'Backend service not configured',
+            details: 'MYA_LLM_URL environment variable must be set to the backend service URL (e.g., https://[username]-mya-llm.hf.space for Hugging Face Spaces deployment)'
+        }, 503);
+    }
+    if (!llmApiToken) {
+        return c.json({
+            error: 'Backend authentication not configured',
+            details: 'LLM_API_TOKEN environment variable must be set with the worker API token for backend authentication'
+        }, 503);
     }
     try {
         const url = new URL(myaLlmUrl);
@@ -32,6 +42,7 @@ export async function proxyToBackend(c, env, method, path) {
                 'Content-Type': 'application/json',
                 'X-Forwarded-For': c.req.header('X-Forwarded-For') || 'unknown',
                 'X-User-Id': c.get('userId') || 'anonymous',
+                'X-API-Token': llmApiToken,
             },
         };
         if (method !== 'GET' && method !== 'HEAD') {
@@ -48,10 +59,15 @@ export async function proxyToBackend(c, env, method, path) {
             responseData = JSON.parse(responseBody || '{}');
         }
         catch {
+            // Backend returned non-JSON response (likely HTML error)
+            const isHtmlError = responseBody && responseBody.includes('<!DOCTYPE') || responseBody.includes('<html');
             responseData = {
-                error: 'Backend returned invalid response',
-                details: responseBody ? responseBody.substring(0, 200) : 'Empty response',
+                error: isHtmlError ? 'Backend returned error page' : 'Backend returned invalid response',
+                details: responseBody ? responseBody.substring(0, 300) : 'Empty response',
                 statusCode: response.status,
+                troubleshooting: isHtmlError ?
+                    'The backend returned an HTML error page instead of JSON. Check that MYA_LLM_URL points to the correct backend service.' :
+                    'The backend response could not be parsed as JSON.'
             };
         }
         return c.json(responseData, response.status);
@@ -112,8 +128,12 @@ export async function proxyToBackendQueued(c, env, method, path) {
 export async function processQueuedRequest(env, userId) {
     const queue = new RequestQueue(env);
     const myaLlmUrl = env.MYA_LLM_URL;
+    const llmApiToken = env.LLM_API_TOKEN;
     if (!myaLlmUrl) {
         throw new Error('Backend service not configured');
+    }
+    if (!llmApiToken) {
+        throw new Error('LLM API token not configured for backend authentication');
     }
     try {
         // Get next request
@@ -132,6 +152,7 @@ export async function processQueuedRequest(env, userId) {
             headers: {
                 'Content-Type': 'application/json',
                 'X-User-Id': userId,
+                'X-API-Token': llmApiToken,
             },
         };
         if (request.body) {

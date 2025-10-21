@@ -17,7 +17,7 @@ import { apiRequest, checkServiceAvailability } from './api-client.js';
 import { loadSession, saveSession, clearSession } from './session.js';
 import { initializeServices } from '../shared/init.js';
 export async function processAuth(email) {
-    return apiRequest('/api/v1/auth', {
+    return apiRequest('/auth', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -26,7 +26,7 @@ export async function processAuth(email) {
     });
 }
 export async function verifyOtpAndCreateSession(email, otpCode, methodId) {
-    return apiRequest('/api/v1/verify-otp', {
+    return apiRequest('/verify-otp', {
         method: 'POST',
         body: JSON.stringify({ email, otpCode, methodId }),
     });
@@ -37,7 +37,8 @@ export async function validateSession(_userId, _machineId, _sessionId) {
         if (!session || !session.sessionJwt) {
             return false;
         }
-        const result = await apiRequest('/api/v1/validate-session', {
+        const result = await apiRequest('/auth/verify', {
+            method: 'POST',
             headers: {
                 'Authorization': `Bearer ${session.sessionJwt}`,
             },

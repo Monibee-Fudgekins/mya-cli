@@ -426,6 +426,133 @@ async function main() {
             console.error(chalk.red('Logout failed:'), error);
         }
     });
+    // Agent commands
+    program
+        .command('ingest')
+        .description('Run data ingestion pipeline for AI agent')
+        .action(async () => {
+        try {
+            const session = await ensureAuthenticated();
+            if (!session) {
+                console.log(chalk.red('Authentication required'));
+                process.exit(1);
+            }
+            const spinner = ora('Running data ingestion...').start();
+            try {
+                const result = await apiRequest('/agent/ingest', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                    body: JSON.stringify({}),
+                });
+                spinner.succeed('Data ingestion completed');
+                console.log(chalk.green('Ingestion Results:'));
+                console.log(result);
+            }
+            catch (error) {
+                spinner.fail('Data ingestion failed');
+                console.error(chalk.red('Ingestion error:'), error);
+            }
+        }
+        catch (error) {
+            console.error(chalk.red('Ingest command failed:'), error);
+        }
+    });
+    program
+        .command('predict')
+        .description('Run prediction pipeline for AI agent')
+        .action(async () => {
+        try {
+            const session = await ensureAuthenticated();
+            if (!session) {
+                console.log(chalk.red('Authentication required'));
+                process.exit(1);
+            }
+            const spinner = ora('Running predictions...').start();
+            try {
+                const result = await apiRequest('/agent/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                    body: JSON.stringify({}),
+                });
+                spinner.succeed('Predictions completed');
+                console.log(chalk.green('Prediction Results:'));
+                console.log(result);
+            }
+            catch (error) {
+                spinner.fail('Predictions failed');
+                console.error(chalk.red('Prediction error:'), error);
+            }
+        }
+        catch (error) {
+            console.error(chalk.red('Predict command failed:'), error);
+        }
+    });
+    program
+        .command('benchmark')
+        .description('Run benchmark pipeline for AI agent')
+        .action(async () => {
+        try {
+            const session = await ensureAuthenticated();
+            if (!session) {
+                console.log(chalk.red('Authentication required'));
+                process.exit(1);
+            }
+            const spinner = ora('Running benchmark...').start();
+            try {
+                const result = await apiRequest('/agent/benchmark', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                    body: JSON.stringify({}),
+                });
+                spinner.succeed('Benchmark completed');
+                console.log(chalk.green('Benchmark Results:'));
+                console.log(result);
+            }
+            catch (error) {
+                spinner.fail('Benchmark failed');
+                console.error(chalk.red('Benchmark error:'), error);
+            }
+        }
+        catch (error) {
+            console.error(chalk.red('Benchmark command failed:'), error);
+        }
+    });
+    program
+        .command('agent-status')
+        .description('Get AI agent status and accuracy metrics')
+        .action(async () => {
+        try {
+            const session = await ensureAuthenticated();
+            if (!session) {
+                console.log(chalk.red('Authentication required'));
+                process.exit(1);
+            }
+            const spinner = ora('Fetching agent status...').start();
+            try {
+                const result = await apiRequest('/agent/status', {
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                });
+                spinner.succeed('Agent status retrieved');
+                console.log(chalk.green('Agent Status:'));
+                console.log(result);
+            }
+            catch (error) {
+                spinner.fail('Failed to get agent status');
+                console.error(chalk.red('Status error:'), error);
+            }
+        }
+        catch (error) {
+            console.error(chalk.red('Agent status command failed:'), error);
+        }
+    });
     // Version command
     program
         .command('version')
