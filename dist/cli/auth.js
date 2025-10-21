@@ -61,7 +61,6 @@ export async function authenticateUser() {
             console.log(chalk.gray('  - Check your internet connection'));
             console.log(chalk.gray('  - Verify you can access other websites'));
             console.log(chalk.gray('  - The service may be temporarily down - try again in a few minutes'));
-            console.log(chalk.gray('  - Check service status at: https://status.your-service.com'));
             return null;
         }
         spinner.text = 'Initializing authentication...';

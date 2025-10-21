@@ -123,6 +123,8 @@ export interface WorkerEnv {
     MYA_LLM_URL: string;
     JWT_SECRET: string;
     LLM_API_TOKEN: string;
+    STYTCH_PROJECT_ID: string;
+    STYTCH_SECRET: string;
     RATE_LIMIT_REQUESTS?: number;
     ENVIRONMENT?: string;
 }
