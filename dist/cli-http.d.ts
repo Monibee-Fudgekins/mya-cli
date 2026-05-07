@@ -2,7 +2,7 @@
 /**
  * Module: MYA CLI - HTTP Client
  * Purpose: Main CLI entry point for MYA trading platform
- * Dependencies: commander (CLI), chalk (colors), ora (spinners), modules in cli/ and shared/
+ * Dependencies: commander (CLI), chalk (colors), modules in cli/ and shared/
  * Used by: CLI users, bin/mya.cjs
  *
  * This is the main CLI orchestrator that handles all user commands.
@@ -13,5 +13,6 @@
  * - cli/analysis.ts - Analysis request handling
  * - cli/display.ts - Result formatting and display
  * - cli/market.ts - Market utilities and timestamps
+ * - cli/spinner.ts - STANDARDS.md compliant spinner output (plain ASCII, no Unicode symbols)
  */
 export {};

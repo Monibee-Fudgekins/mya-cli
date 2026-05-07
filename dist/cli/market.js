@@ -89,19 +89,19 @@ export async function fetchSystemStatus() {
         return null;
     }
 }
-export async function getHuggingFaceFreshness() {
+export async function getCloudflareAnnouncementsFreshness() {
     try {
         const status = await fetchSystemStatus();
         if (status?.vectorize?.lastAnnouncementsUpdate) {
             const lastUpdate = new Date(status.vectorize.lastAnnouncementsUpdate);
-            console.log(`Last Hugging Face announcements update: ${lastUpdate.toLocaleString()}`);
+            console.log(`Last Cloudflare announcements update: ${lastUpdate.toLocaleString()}`);
         }
         else {
-            console.log('Hugging Face announcements have not been updated yet');
+            console.log('Cloudflare announcements have not been updated yet');
         }
     }
     catch (error) {
-        console.error('Error fetching Hugging Face freshness:', error);
+        console.error('Error fetching Cloudflare announcements freshness:', error);
     }
 }
 //# sourceMappingURL=market.js.map

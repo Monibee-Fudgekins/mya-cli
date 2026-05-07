@@ -5,8 +5,8 @@
  * Used by: cli-http.ts, auth.ts, market.ts
  *
  * Error Handling:
- * - Retry logic: Attempts requests up to 3 times with exponential backoff (1s, 2s intervals)
- * - Timeout protection: 30-second timeout per request to handle network issues
+ * - Retry logic: Attempts requests up to 3 times with exponential backoff (5s, 10s intervals)
+ * - Timeout protection: 5-minute timeout per request to handle rate-limited backend responses
  * - JSON parsing: Catches and reports JSON parse failures with response snippet
  * - HTTP errors: Includes full response body in error messages for debugging
  */

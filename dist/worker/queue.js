@@ -323,14 +323,4 @@ export class RequestQueue {
         }
     }
 }
-/**
- * Create a global queue instance for use in worker
- * Purpose: Factory function to initialize RequestQueue with environment
- * Args:
- *   env: Worker environment with KV namespace
- * Returns: RequestQueue instance
- */
-export function createQueue(env) {
-    return new RequestQueue(env);
-}
 //# sourceMappingURL=queue.js.map

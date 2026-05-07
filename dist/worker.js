@@ -24,10 +24,40 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { getJwtMiddleware, getRateLimitMiddleware } from './worker/middleware.js';
-import { proxyToBackend, proxyToBackendQueued } from './worker/proxy.js';
+import { proxyToBackend, proxyMcp } from './worker/proxy.js';
+import { getLlmClientFromEnv } from './worker/llm-client.js';
 import { RequestQueue } from './worker/queue.js';
-import { handleAuth, handleVerifyOtp, handleAuthVerify } from './worker/auth.js';
+import { handleAuth, handleVerifyOtp, handleAuthVerify, handleSessionByEmail } from './worker/auth.js';
 const app = new Hono();
+const forwardHeaders = (c) => {
+    const headers = ['Authorization', 'X-User-Id', 'X-Forwarded-For', 'X-MCP-Client'];
+    return headers.reduce((acc, header) => {
+        const value = c.req.header(header);
+        if (value) {
+            acc[header] = value;
+        }
+        return acc;
+    }, {});
+};
+const readJsonBody = async (c) => {
+    try {
+        return await c.req.json();
+    }
+    catch {
+        return {};
+    }
+};
+const withLlmClient = async (c, handler) => {
+    const env = c.env;
+    const result = getLlmClientFromEnv(env, {
+        origin: 'https://mya.monibee-fudgekin.workers.dev',
+        userAgent: 'MYA-Worker/1.0',
+    });
+    if (!result.ok) {
+        return c.json(result.error, 503);
+    }
+    return handler(result.client);
+};
 app.use(logger());
 app.use(cors({
     origin: '*',
@@ -35,16 +65,23 @@ app.use(cors({
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: false,
 }));
+// Session-by-email is registered later after middleware setup to ensure middleware application
 // Apply middleware using factory functions
 app.use('*', async (c, next) => {
     const env = c.env;
     const jwtMiddleware = getJwtMiddleware(env);
     return jwtMiddleware(c, next);
 });
+// Enable rate limiting middleware (per README: 10 req/min default via env)
 app.use('*', async (c, next) => {
     const env = c.env;
     const rateLimitMiddleware = getRateLimitMiddleware(env);
     return rateLimitMiddleware(c, next);
+});
+// Register session lookup route after app declaration
+app.post('/auth/session-by-email', async (c) => {
+    const env = c.env;
+    return handleSessionByEmail(c, env);
 });
 /**
  * Health check endpoint
@@ -56,6 +93,9 @@ app.get('/health', (c) => {
         version: '2.0.0',
     });
 });
+// MCP passthrough endpoints – forward to backend MCP server
+app.all('/mcp', async (c) => proxyMcp(c, c.env));
+app.all('/mcp/*', async (c) => proxyMcp(c, c.env));
 /**
  * Test endpoint - Get OTP for testing (dev only)
  * Only available in dev environment for testing
@@ -86,6 +126,7 @@ app.get('/test/otp/:methodId', async (c) => {
         });
     }
     catch (error) {
+        console.error('[TEST OTP] Failed to retrieve OTP', error);
         return c.json({ error: 'Failed to retrieve OTP' }, 500);
     }
 });
@@ -99,29 +140,42 @@ app.get('/test/otp/:methodId', async (c) => {
  * Direct proxy for GET (check results)
  */
 app.post('/analyze', async (c) => {
-    const env = c.env;
-    return proxyToBackendQueued(c, env, 'POST', '/api/v1/analyze');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.analyze(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.get('/analyze/:jobId', async (c) => {
-    const env = c.env;
-    const jobId = c.req.param('jobId');
-    return proxyToBackend(c, env, 'GET', `/api/v1/analyze/${jobId}`);
+    return withLlmClient(c, async (client) => {
+        const jobId = c.req.param('jobId');
+        const { status, data } = await client.analyzeStatus(jobId, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/forecast', async (c) => {
-    const env = c.env;
-    return proxyToBackendQueued(c, env, 'POST', '/api/v1/forecast');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.forecast(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.get('/daily-report', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'GET', '/api/v1/daily-report');
+    return withLlmClient(c, async (client) => {
+        const { status, data } = await client.dailyReport(forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.get('/learning-metrics', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'GET', '/api/v1/learning-metrics');
+    return withLlmClient(c, async (client) => {
+        const { status, data } = await client.learningMetrics(forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 /**
  * Authentication Endpoints - Handled Locally by Worker
- * No backend call needed for auth flows
+ * Auth is handled directly in the worker using Stytch for secure OTP delivery
+ * Worker is the auth boundary - no backend dependency for authentication
  */
 app.post('/auth', async (c) => {
     const env = c.env;
@@ -136,43 +190,75 @@ app.post('/verify-otp', async (c) => {
     return handleVerifyOtp(c, env);
 });
 app.get('/recommendations/open', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'GET', '/api/v1/recommendations/open');
+    return withLlmClient(c, async (client) => {
+        const { status, data } = await client.recommendationsOpen(forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/announcements', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/announcements');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.announcements(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
+});
+// Recent results proxy - returns recent results summary for the authenticated user
+app.get('/recent-results', async (c) => {
+    return withLlmClient(c, async (client) => {
+        const { status, data } = await client.recentResults(forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/double', async (c) => {
-    const env = c.env;
-    return proxyToBackendQueued(c, env, 'POST', '/api/v1/double');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.double(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/cmt', async (c) => {
-    const env = c.env;
-    return proxyToBackendQueued(c, env, 'POST', '/api/v1/cmt');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.cmt(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/benchmark', async (c) => {
-    const env = c.env;
-    return proxyToBackendQueued(c, env, 'POST', '/api/v1/benchmark');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.benchmark(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 /**
  * Agent API routes - forward to mya-llm agent endpoints
  */
 app.post('/agent/ingest', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/agent/ingest');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.agentIngest(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/agent/predict', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/agent/predict');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.agentPredict(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.post('/agent/benchmark', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'POST', '/api/v1/agent/benchmark');
+    return withLlmClient(c, async (client) => {
+        const payload = await readJsonBody(c);
+        const { status, data } = await client.agentBenchmark(payload, forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 app.get('/agent/status', async (c) => {
-    const env = c.env;
-    return proxyToBackend(c, env, 'GET', '/api/v1/agent/status');
+    return withLlmClient(c, async (client) => {
+        const { status, data } = await client.agentStatus(forwardHeaders(c));
+        return c.json(data, status);
+    });
 });
 /**
  * Queue Management Endpoints
@@ -255,7 +341,7 @@ app.post('/queue/cleanup', async (c) => {
 /**
  * Catch-all route for /api/v1/* paths
  * Strips /api/v1 prefix and forwards to backend
- * Allows CLI to call either /analyze or /api/v1/analyze
+ * CLI calls /analyze (spec-compliant endpoint)
  */
 app.all('/api/v1/*', async (c) => {
     const env = c.env;

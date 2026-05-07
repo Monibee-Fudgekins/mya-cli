@@ -2,7 +2,7 @@
 /**
  * Module: MYA CLI - HTTP Client
  * Purpose: Main CLI entry point for MYA trading platform
- * Dependencies: commander (CLI), chalk (colors), ora (spinners), modules in cli/ and shared/
+ * Dependencies: commander (CLI), chalk (colors), modules in cli/ and shared/
  * Used by: CLI users, bin/mya.cjs
  *
  * This is the main CLI orchestrator that handles all user commands.
@@ -13,10 +13,10 @@
  * - cli/analysis.ts - Analysis request handling
  * - cli/display.ts - Result formatting and display
  * - cli/market.ts - Market utilities and timestamps
+ * - cli/spinner.ts - STANDARDS.md compliant spinner output (plain ASCII, no Unicode symbols)
  */
 import { Command } from 'commander';
 import chalk from 'chalk';
-import ora from 'ora';
 // Import auth and session management
 import { authenticateUser, ensureAuthenticated, validateSession } from './cli/auth.js';
 import { loadSession, clearSession } from './cli/session.js';
@@ -26,7 +26,9 @@ import { submitAnalysisRequest, getAnalysisResult, _logoutUser } from './cli/ana
 // Import display utilities
 import { displayAnalysisResults, displayFallbackNotice, printSystemStatus, startYahooCooldownPolling } from './cli/display.js';
 // Import market utilities
-import { getMarketStatusMessage, fetchSystemStatus, getHuggingFaceFreshness } from './cli/market.js';
+import { getMarketStatusMessage, fetchSystemStatus, getCloudflareAnnouncementsFreshness } from './cli/market.js';
+// Import spinner utilities (STANDARDS.md compliant: plain ASCII symbols, no Unicode/emojis)
+import { createSpinner } from './cli/spinner.js';
 /**
  * Main CLI program
  */
@@ -47,7 +49,7 @@ async function main() {
             if (!options.force) {
                 const existingSession = loadSession();
                 if (existingSession) {
-                    const spinner = ora('Checking existing session...').start();
+                    const spinner = createSpinner('Checking existing session...').start();
                     try {
                         const isValid = await validateSession(existingSession.userId, existingSession.machineId, existingSession.sessionId);
                         if (isValid) {
@@ -94,8 +96,8 @@ async function main() {
                 const secs = Math.ceil((sys.yahooCooldown.remainingMs || 0) / 1000);
                 console.log(chalk.yellow(` Yahoo cooldown active (~${secs}s). We'll wait as needed during fetches.`));
             }
-            await getHuggingFaceFreshness();
-            const spinner = ora('Analyzing market data from announcements...').start();
+            await getCloudflareAnnouncementsFreshness();
+            const spinner = createSpinner('Analyzing market data from announcements...').start();
             const stopCooldownTicker = startYahooCooldownPolling(spinner, 'Analyzing market data from announcements...');
             try {
                 const analysisResult = await submitAnalysisRequest(session.userId, session.machineId, 'analyze_cmt', {
@@ -109,7 +111,8 @@ async function main() {
                     stopCooldownTicker();
                     spinner.succeed('Market analysis completed');
                     console.log(chalk.green('Stock Analysis Results:'));
-                    console.log(chalk.gray('Request ID:'), analysisResult.requestId);
+                    const requestId = analysisResult.requestId || analysisResult.result?.requestId;
+                    console.log(chalk.gray('Request ID:'), requestId || 'N/A');
                     if (analysisResult.result) {
                         console.log('\n' + chalk.blue('Market Analysis:'));
                         if (typeof analysisResult.result.aiAnalysis === 'string') {
@@ -157,8 +160,8 @@ async function main() {
                 const secs = Math.ceil((sys.yahooCooldown.remainingMs || 0) / 1000);
                 console.log(chalk.yellow(` Yahoo cooldown active (~${secs}s). We'll wait as needed during fetches.`));
             }
-            await getHuggingFaceFreshness();
-            const spinner = ora('Analyzing for 200%+ return opportunities...').start();
+            await getCloudflareAnnouncementsFreshness();
+            const spinner = createSpinner('Analyzing for 200%+ return opportunities...').start();
             const stopCooldownTicker = startYahooCooldownPolling(spinner, 'Analyzing for 200%+ return opportunities...');
             try {
                 const analysisResult = await submitAnalysisRequest(session.userId, session.machineId, 'double_cmt', {
@@ -175,7 +178,8 @@ async function main() {
                     stopCooldownTicker();
                     spinner.succeed('Double capital analysis completed');
                     console.log(chalk.green('200%+ Return Analysis Results:'));
-                    console.log(chalk.gray('Request ID:'), analysisResult.requestId);
+                    const requestId = analysisResult.requestId || analysisResult.result?.requestId;
+                    console.log(chalk.gray('Request ID:'), requestId || 'N/A');
                     if (analysisResult.result) {
                         console.log('\n' + chalk.blue('Market Analysis - 200%+ Opportunities:'));
                         if (typeof analysisResult.result.aiAnalysis === 'string') {
@@ -223,8 +227,8 @@ async function main() {
                 const secs = Math.ceil((sys.yahooCooldown.remainingMs || 0) / 1000);
                 console.log(chalk.yellow(` Yahoo cooldown active (~${secs}s). We'll wait as needed during fetches.`));
             }
-            await getHuggingFaceFreshness();
-            const spinner = ora('Finding stocks with earnings THIS WEEK only...').start();
+            await getCloudflareAnnouncementsFreshness();
+            const spinner = createSpinner('Finding stocks with earnings THIS WEEK only...').start();
             const stopCooldownTicker = startYahooCooldownPolling(spinner, 'Finding stocks with earnings THIS WEEK only...');
             try {
                 const analysisResult = await submitAnalysisRequest(session.userId, session.machineId, 'earnings_cmt', {
@@ -240,7 +244,8 @@ async function main() {
                     stopCooldownTicker();
                     spinner.succeed('Current week earnings analysis completed');
                     console.log(chalk.green('This Week\'s Earnings Analysis:'));
-                    console.log(chalk.gray('Request ID:'), analysisResult.requestId);
+                    const requestId = analysisResult.requestId || analysisResult.result?.requestId;
+                    console.log(chalk.gray('Request ID:'), requestId || 'N/A');
                     if (analysisResult.result) {
                         console.log('\n' + chalk.blue('Earnings This Week:'));
                         const symbols = Array.isArray(analysisResult.result.symbols) ? analysisResult.result.symbols : [];
@@ -282,8 +287,8 @@ async function main() {
                 process.exit(1);
             }
             console.log(getMarketStatusMessage());
-            await getHuggingFaceFreshness();
-            const spinner = ora('Reviewing market news and fundamentals data...').start();
+            await getCloudflareAnnouncementsFreshness();
+            const spinner = createSpinner('Reviewing market news and fundamentals data...').start();
             try {
                 const analysisResult = await submitAnalysisRequest(session.userId, session.machineId, 'announcements_cmt', {});
                 if (analysisResult.success && analysisResult.result) {
@@ -332,7 +337,7 @@ async function main() {
                 await displayAnalysisResults(requestId, session, getAnalysisResult);
             }
             else {
-                const spinner = ora('Retrieving most recent analysis results...').start();
+                const spinner = createSpinner('Retrieving most recent analysis results...').start();
                 try {
                     const result = await apiRequest('/recent-results', {
                         headers: {
@@ -409,7 +414,7 @@ async function main() {
                 console.log(chalk.yellow('Not currently logged in'));
                 return;
             }
-            const spinner = ora('Logging out...').start();
+            const spinner = createSpinner('Logging out...').start();
             try {
                 await _logoutUser(session.userId, session.machineId);
                 spinner.succeed('Logged out from server');
@@ -428,7 +433,7 @@ async function main() {
     });
     // Agent commands
     program
-        .command('ingest')
+        .command('ingest', { hidden: true })
         .description('Run data ingestion pipeline for AI agent')
         .action(async () => {
         try {
@@ -437,14 +442,25 @@ async function main() {
                 console.log(chalk.red('Authentication required'));
                 process.exit(1);
             }
-            const spinner = ora('Running data ingestion...').start();
+            const spinner = createSpinner('Auto-discovering symbols for ingestion...').start();
             try {
+                // Auto-discover symbols from backend
+                const symbolsResp = await apiRequest('/api/v1/auto-discover-symbols', {
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                });
+                const symbols = Array.isArray(symbolsResp.symbols) ? symbolsResp.symbols : [];
+                if (symbols.length === 0) {
+                    spinner.fail('No symbols discovered for ingestion');
+                    return;
+                }
                 const result = await apiRequest('/agent/ingest', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${session.sessionJwt}`,
                     },
-                    body: JSON.stringify({}),
+                    body: JSON.stringify({ tickers: symbols }),
                 });
                 spinner.succeed('Data ingestion completed');
                 console.log(chalk.green('Ingestion Results:'));
@@ -460,7 +476,7 @@ async function main() {
         }
     });
     program
-        .command('predict')
+        .command('predict', { hidden: true })
         .description('Run prediction pipeline for AI agent')
         .action(async () => {
         try {
@@ -469,14 +485,25 @@ async function main() {
                 console.log(chalk.red('Authentication required'));
                 process.exit(1);
             }
-            const spinner = ora('Running predictions...').start();
+            const spinner = createSpinner('Auto-discovering symbols for prediction...').start();
             try {
+                // Auto-discover symbols from backend
+                const symbolsResp = await apiRequest('/api/v1/auto-discover-symbols', {
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                });
+                const symbols = Array.isArray(symbolsResp.symbols) ? symbolsResp.symbols : [];
+                if (symbols.length === 0) {
+                    spinner.fail('No symbols discovered for prediction');
+                    return;
+                }
                 const result = await apiRequest('/agent/predict', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${session.sessionJwt}`,
                     },
-                    body: JSON.stringify({}),
+                    body: JSON.stringify({ tickers: symbols }),
                 });
                 spinner.succeed('Predictions completed');
                 console.log(chalk.green('Prediction Results:'));
@@ -501,9 +528,10 @@ async function main() {
                 console.log(chalk.red('Authentication required'));
                 process.exit(1);
             }
-            const spinner = ora('Running benchmark...').start();
+            const spinner = createSpinner('Running benchmark...').start();
             try {
-                const result = await apiRequest('/agent/benchmark', {
+                // Call the canonical backend benchmark endpoint with an empty body.
+                const result = await apiRequest('/api/v1/benchmark', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${session.sessionJwt}`,
@@ -512,7 +540,16 @@ async function main() {
                 });
                 spinner.succeed('Benchmark completed');
                 console.log(chalk.green('Benchmark Results:'));
-                console.log(result);
+                if (result && typeof result.aiAnalysis === 'string') {
+                    console.log('\n' + chalk.blue('AI Summary:'));
+                    console.log(result.aiAnalysis);
+                    if (typeof result.accuracy !== 'undefined') {
+                        console.log(chalk.gray(`\nTracked accuracy: ${result.accuracy}`));
+                    }
+                }
+                else {
+                    console.log(result);
+                }
             }
             catch (error) {
                 spinner.fail('Benchmark failed');
@@ -523,8 +560,47 @@ async function main() {
             console.error(chalk.red('Benchmark command failed:'), error);
         }
     });
+    // Forecast command
     program
-        .command('agent-status')
+        .command('forecast')
+        .description('Forecast stock price direction and confidence (AI model)')
+        .action(async () => {
+        try {
+            const session = await ensureAuthenticated();
+            if (!session) {
+                console.log(chalk.red('Authentication required'));
+                process.exit(1);
+            }
+            const spinner = createSpinner('Running stock forecast...').start();
+            try {
+                const result = await apiRequest('/api/v1/forecast', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.sessionJwt}`,
+                    },
+                    body: JSON.stringify({}),
+                });
+                spinner.succeed('Forecast completed');
+                console.log(chalk.green('Forecast Results:'));
+                if (result && typeof result.aiAnalysis === 'string') {
+                    console.log('\n' + chalk.blue('AI Forecast:'));
+                    console.log(result.aiAnalysis);
+                }
+                else {
+                    console.log(JSON.stringify(result, null, 2));
+                }
+            }
+            catch (error) {
+                spinner.fail('Forecast failed');
+                console.error(chalk.red('Forecast error:'), error);
+            }
+        }
+        catch (error) {
+            console.error(chalk.red('Forecast command failed:'), error);
+        }
+    });
+    program
+        .command('agent-status', { hidden: true })
         .description('Get AI agent status and accuracy metrics')
         .action(async () => {
         try {
@@ -533,20 +609,21 @@ async function main() {
                 console.log(chalk.red('Authentication required'));
                 process.exit(1);
             }
-            const spinner = ora('Fetching agent status...').start();
+            const spinner = createSpinner('Auto-discovering agent metrics...').start();
             try {
-                const result = await apiRequest('/agent/status', {
+                // Auto-discover metrics from backend
+                const metrics = await apiRequest('/learning-metrics', {
                     headers: {
                         'Authorization': `Bearer ${session.sessionJwt}`,
                     },
                 });
-                spinner.succeed('Agent status retrieved');
-                console.log(chalk.green('Agent Status:'));
-                console.log(result);
+                spinner.succeed('Agent metrics retrieved');
+                console.log(chalk.green('Agent Metrics:'));
+                console.log(metrics);
             }
             catch (error) {
-                spinner.fail('Failed to get agent status');
-                console.error(chalk.red('Status error:'), error);
+                spinner.fail('Failed to get agent metrics');
+                console.error(chalk.red('Metrics error:'), error);
             }
         }
         catch (error) {

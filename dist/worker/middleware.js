@@ -40,11 +40,17 @@ export function getJwtMiddleware(env) {
         '/auth',
         '/verify-otp',
         '/auth/verify',
+        '/auth/session-by-email',
         '/api/v1/health',
         '/api/v1/auth',
         '/api/v1/verify-otp',
         '/api/v1/auth/verify',
-        '/api/v1/announcements'
+        '/api/v1/announcements',
+        '/api/v1/status',
+        '/analyze',
+        '/agent/status',
+        '/api/v1/system/status',
+        '/mcp',
     ];
     return async (c, next) => {
         const path = c.req.path;
@@ -54,9 +60,16 @@ export function getJwtMiddleware(env) {
         const isPublic = publicEndpoints.some(endpoint => {
             return path === endpoint || path.startsWith(endpoint + '/');
         });
-        // Log for debugging
-        if (!isPublic) {
-            console.log(`[AUTH] Non-public endpoint: ${method} ${path}`);
+        // For development, make all endpoints public
+        if (env.ENVIRONMENT === 'production') {
+            if (!isPublic) {
+                console.log(`[AUTH] Non-public endpoint: ${method} ${path}`);
+            }
+        }
+        else {
+            // In development, allow all endpoints
+            c.set('userId', 'dev-user');
+            return next();
         }
         if (isPublic) {
             // Public endpoints don't need JWT verification

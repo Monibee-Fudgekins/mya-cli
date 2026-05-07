@@ -5,8 +5,8 @@
  * Used by: cli-http.ts, auth.ts, market.ts
  *
  * Error Handling:
- * - Retry logic: Attempts requests up to 3 times with exponential backoff (1s, 2s intervals)
- * - Timeout protection: 30-second timeout per request to handle network issues
+ * - Retry logic: Attempts requests up to 3 times with exponential backoff (5s, 10s intervals)
+ * - Timeout protection: 5-minute timeout per request to handle rate-limited backend responses
  * - JSON parsing: Catches and reports JSON parse failures with response snippet
  * - HTTP errors: Includes full response body in error messages for debugging
  */
@@ -16,10 +16,17 @@ export async function makeApiRequest(url, options = {}) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout for rate-limited requests
+            const providedHeaders = options.headers || {};
+            const mcpClient = process.env.MCP_CLIENT || 'mya-cli/1.0';
+            const headers = {
+                ...providedHeaders,
+                'X-MCP-Client': providedHeaders['X-MCP-Client'] || mcpClient,
+            };
             const response = await fetch(url, {
                 ...options,
-                signal: controller.signal
+                headers,
+                signal: controller.signal,
             });
             clearTimeout(timeoutId);
             return response;
@@ -28,7 +35,7 @@ export async function makeApiRequest(url, options = {}) {
             if (attempt === maxRetries) {
                 throw new Error(`Request failed after ${maxRetries} attempts: ${error.message}`);
             }
-            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            await new Promise(resolve => setTimeout(resolve, 5000 * attempt)); // 5s, 10s backoff
         }
     }
     throw new Error('Request failed');
@@ -37,32 +44,47 @@ export async function apiRequest(endpoint, options = {}) {
     const config = getCLIConfig();
     const url = `${config.apiUrl}${endpoint}`;
     const response = await makeApiRequest(url, options);
+    // Read response body once to avoid consuming stream twice
+    let responseText = '';
+    try {
+        responseText = await response.text();
+    }
+    catch (error) {
+        throw new Error(`Failed to read response: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
     if (!response.ok) {
-        let errorDetails = '';
+        let errorBody = '';
+        // Try to parse as JSON first for structured error responses
         try {
-            const errorBody = await response.text();
-            errorDetails = errorBody ? ` - ${errorBody}` : '';
+            const jsonError = JSON.parse(responseText);
+            errorBody = JSON.stringify(jsonError);
         }
         catch {
-            // Ignore error reading response body
+            // If not JSON, use text as-is
+            errorBody = responseText || response.statusText;
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}${errorDetails}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ' - ' + errorBody : ''}`);
+    }
+    // Try to parse response as JSON
+    if (!responseText) {
+        throw new Error('Empty response from server');
     }
     try {
-        return await response.json();
+        return JSON.parse(responseText);
     }
     catch {
-        const textBody = await response.text();
-        throw new Error(`Invalid JSON response from server: ${textBody.substring(0, 500)}`);
+        throw new Error(`Invalid JSON response from server: ${responseText.substring(0, 500)}`);
     }
 }
 export async function checkServiceAvailability() {
     try {
         const config = getCLIConfig();
+        const mcpClient = process.env.MCP_CLIENT || 'mya-cli/1.0';
         const response = await fetch(`${config.apiUrl}/health`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
+                'X-MCP-Client': mcpClient,
             },
         });
         return response.ok;

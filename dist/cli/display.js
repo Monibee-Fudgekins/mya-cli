@@ -5,8 +5,8 @@
  * Used by: cli-http.ts
  */
 import chalk from 'chalk';
-import ora from 'ora';
 import { getMarketStatusMessage, fetchSystemStatus } from './market.js';
+import { createSpinner } from './spinner.js';
 export function displayFallbackNotice(result) {
     if (!result?.fallback) {
         return;
@@ -103,7 +103,7 @@ export function printSystemStatus(status) {
     }
 }
 export async function displayAnalysisResults(requestId, session, getAnalysisResult) {
-    const spinner = ora('Retrieving analysis results...').start();
+    const spinner = createSpinner('Retrieving analysis results...').start();
     try {
         const result = await getAnalysisResult(requestId, session.userId);
         if (result.status === 'completed') {

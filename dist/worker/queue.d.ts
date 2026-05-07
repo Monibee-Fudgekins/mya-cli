@@ -117,12 +117,4 @@ export declare class RequestQueue {
      */
     clearCompleted(userId: string): Promise<number>;
 }
-/**
- * Create a global queue instance for use in worker
- * Purpose: Factory function to initialize RequestQueue with environment
- * Args:
- *   env: Worker environment with KV namespace
- * Returns: RequestQueue instance
- */
-export declare function createQueue(env: WorkerEnv): RequestQueue;
 export {};

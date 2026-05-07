@@ -14,4 +14,4 @@ export declare function getETParts(): {
 export declare function isMarketHours(): boolean;
 export declare function getMarketStatusMessage(): string;
 export declare function fetchSystemStatus(): Promise<SystemStatus | null>;
-export declare function getHuggingFaceFreshness(): Promise<void>;
+export declare function getCloudflareAnnouncementsFreshness(): Promise<void>;

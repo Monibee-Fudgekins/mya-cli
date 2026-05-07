@@ -1,7 +1,5 @@
 /**
  * Module: Shared Initialization
- * Purpose: Common initialization functions used by CLI
- * Dependencies: apiRequest from api-client module
- * Used by: cli-http.ts
+ * Purpose: Placeholder — no longer used. Kept for potential future shared init logic.
  */
-export declare function initializeServices(apiRequest: (endpoint: string, options?: RequestInit) => Promise<any>): Promise<void>;
+export {};

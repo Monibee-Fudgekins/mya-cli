@@ -1,192 +1,182 @@
 /**
  * Module: Worker Proxy
- * Purpose: Handle request forwarding to mya-llm backend with optional queue support
- * Dependencies: Cloudflare Workers API, WorkerEnv types, RequestQueue from queue.ts
+ * Purpose: Handle request forwarding to mya-llm backend
+ * Dependencies: Cloudflare Workers API, WorkerEnv types, LlmClient
  * Used by: worker.ts
- *
- * Provides two modes of request handling:
- * 1. Direct proxying: Immediate forwarding to backend (fast requests)
- * 2. Queued proxying: FIFO queue-based processing (heavy workloads)
- *
- * Use proxyToBackend for direct requests (auth, health checks)
- * Use proxyToBackendQueued for expensive operations (analyze, forecast)
- *
- * Error Handling:
- * - Previous issue: When backend returns HTML error pages (5xx), JSON parsing failed
- * - Current fix: Gracefully handle non-JSON responses with detailed error messages
- * - Result: Users get meaningful error info about backend configuration issues
- * - Root cause errors usually indicate: MYA_LLM_URL not set in wrangler secrets
  */
-import { RequestQueue } from './queue.js';
-export async function proxyToBackend(c, env, method, path) {
-    const myaLlmUrl = env.MYA_LLM_URL;
-    const llmApiToken = env.LLM_API_TOKEN;
-    if (!myaLlmUrl) {
-        return c.json({
-            error: 'Backend service not configured',
-            details: 'MYA_LLM_URL environment variable must be set to the backend service URL (e.g., https://[username]-mya-llm.hf.space for Hugging Face Spaces deployment)'
-        }, 503);
+import { getLlmClientFromEnv } from './llm-client.js';
+/**
+ * Proxy MCP traffic to the backend without JSON parsing to preserve streaming.
+ */
+export async function proxyMcp(c, env) {
+    if (!env.MYA_LLM_URL) {
+        return c.json({ error: 'Backend service not configured', details: 'MYA_LLM_URL must be set' }, 503);
     }
-    if (!llmApiToken) {
-        return c.json({
-            error: 'Backend authentication not configured',
-            details: 'LLM_API_TOKEN environment variable must be set with the worker API token for backend authentication'
-        }, 503);
+    if (!env.LLM_API_TOKEN) {
+        return c.json({ error: 'Backend authentication not configured', details: 'LLM_API_TOKEN must be set' }, 503);
+    }
+    const incomingUrl = new URL(c.req.url);
+    const backendUrl = new URL(env.MYA_LLM_URL);
+    const pathSuffix = c.req.path.replace(/^\/mcp/, '') || '';
+    backendUrl.pathname = `/mcp${pathSuffix}`;
+    backendUrl.search = incomingUrl.search;
+    const headers = new Headers(c.req.raw.headers);
+    headers.set('X-API-Token', env.LLM_API_TOKEN);
+    try {
+        const mcpClient = headers.get('X-MCP-Client') || env.MCP_CLIENT || process?.env?.MCP_CLIENT;
+        if (mcpClient) {
+            headers.set('X-MCP-Client', String(mcpClient));
+        }
+    }
+    catch {
+        // ignore optional env access issues
+    }
+    if (!headers.has('Origin')) {
+        headers.set('Origin', 'https://mya.monibee-fudgekin.workers.dev');
+    }
+    const method = c.req.method;
+    const init = {
+        method,
+        headers,
+        redirect: 'manual',
+    };
+    if (method !== 'GET' && method !== 'HEAD') {
+        init.body = c.req.raw.body;
+        init.duplex = 'half'; // Ensure streaming uploads are allowed
     }
     try {
-        const url = new URL(myaLlmUrl);
-        url.pathname = path;
-        const requestInit = {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Forwarded-For': c.req.header('X-Forwarded-For') || 'unknown',
-                'X-User-Id': c.get('userId') || 'anonymous',
-                'X-API-Token': llmApiToken,
-            },
-        };
-        if (method !== 'GET' && method !== 'HEAD') {
-            const body = await c.req.text();
-            if (body) {
-                requestInit.body = body;
+        const backendResponse = await fetch(backendUrl.toString(), init);
+        const responseHeaders = new Headers(backendResponse.headers);
+        return new Response(backendResponse.body, {
+            status: backendResponse.status,
+            headers: responseHeaders,
+        });
+    }
+    catch (error) {
+        console.error('[MCP PROXY ERROR]', error);
+        return c.json({
+            error: 'Failed to proxy MCP request',
+            details: error instanceof Error ? error.message : String(error),
+        }, 502);
+    }
+}
+export async function proxyToBackend(c, env, method, path) {
+    const clientResult = getLlmClientFromEnv(env, {
+        origin: 'https://mya.monibee-fudgekin.workers.dev',
+        userAgent: 'MYA-Worker/1.0',
+    });
+    if (!clientResult.ok) {
+        return c.json(clientResult.error, 503);
+    }
+    try {
+        const forwardHeaders = ['Authorization', 'X-User-Id', 'X-Forwarded-For', 'X-MCP-Client'];
+        const headers = forwardHeaders.reduce((acc, header) => {
+            const value = c.req.header(header);
+            if (value) {
+                acc[header] = value;
+            }
+            return acc;
+        }, {});
+        // If MCP client metadata is available in the environment and not provided
+        // by the incoming request, attach it for observability.
+        try {
+            const mcpClient = env.MCP_CLIENT || process?.env?.MCP_CLIENT;
+            if (mcpClient && !headers['X-MCP-Client']) {
+                headers['X-MCP-Client'] = String(mcpClient);
             }
         }
-        console.log(`[PROXY] ${method} ${path} -> ${url.toString()}`);
-        const response = await fetch(url.toString(), requestInit);
-        const responseBody = await response.text();
-        let responseData;
-        try {
-            responseData = JSON.parse(responseBody || '{}');
-        }
         catch {
-            // Backend returned non-JSON response (likely HTML error)
-            const isHtmlError = responseBody && responseBody.includes('<!DOCTYPE') || responseBody.includes('<html');
-            responseData = {
-                error: isHtmlError ? 'Backend returned error page' : 'Backend returned invalid response',
-                details: responseBody ? responseBody.substring(0, 300) : 'Empty response',
-                statusCode: response.status,
-                troubleshooting: isHtmlError ?
-                    'The backend returned an HTML error page instead of JSON. Check that MYA_LLM_URL points to the correct backend service.' :
-                    'The backend response could not be parsed as JSON.'
-            };
+            // ignore environment access issues
         }
-        return c.json(responseData, response.status);
+        let bodyText = null;
+        if (method !== 'GET' && method !== 'HEAD') {
+            bodyText = await c.req.text();
+        }
+        const parseJsonBody = () => {
+            if (!bodyText) {
+                return {};
+            }
+            try {
+                return JSON.parse(bodyText);
+            }
+            catch {
+                return {};
+            }
+        };
+        console.log(`[PROXY] ${method} ${path}`);
+        const client = clientResult.client;
+        let response;
+        if (path === '/analyze' && method === 'POST') {
+            response = await client.analyze(parseJsonBody(), headers);
+        }
+        else if (path.startsWith('/analyze/') && method === 'GET') {
+            const jobId = path.split('/analyze/')[1];
+            response = await client.analyzeStatus(jobId, headers);
+        }
+        else if (path === '/api/v1/forecast' && method === 'POST') {
+            response = await client.forecast(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/daily-report' && method === 'GET') {
+            response = await client.dailyReport(headers);
+        }
+        else if (path === '/api/v1/learning-metrics' && method === 'GET') {
+            response = await client.learningMetrics(headers);
+        }
+        else if (path === '/api/v1/recommendations/open' && method === 'GET') {
+            response = await client.recommendationsOpen(headers);
+        }
+        else if (path === '/api/v1/announcements' && method === 'POST') {
+            response = await client.announcements(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/double' && method === 'POST') {
+            response = await client.double(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/cmt' && method === 'POST') {
+            response = await client.cmt(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/benchmark' && method === 'POST') {
+            response = await client.benchmark(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/agent/ingest' && method === 'POST') {
+            response = await client.agentIngest(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/agent/predict' && method === 'POST') {
+            response = await client.agentPredict(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/agent/benchmark' && method === 'POST') {
+            response = await client.agentBenchmark(parseJsonBody(), headers);
+        }
+        else if (path === '/api/v1/agent/status' && method === 'GET') {
+            response = await client.agentStatus(headers);
+        }
+        else if (path === '/api/v1/system/status' && method === 'GET') {
+            response = await client.systemStatus(headers);
+        }
+        else {
+            response = await client.request(path, {
+                method,
+                headers,
+                body: bodyText && bodyText.length > 0 ? bodyText : null,
+            });
+        }
+        return c.json(response.data, response.status);
     }
     catch (error) {
         console.error('[PROXY ERROR]', error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return c.json({
             error: 'Backend request failed',
-            details: error instanceof Error ? error.message : String(error),
+            details: errorMsg,
+            troubleshooting: 'Verify mya-llm backend is running at the configured MYA_LLM_URL with correct LLM_API_TOKEN'
         }, 503);
-    }
-}
-/**
- * Proxy request through FIFO queue
- * Purpose: Handle expensive operations (analyze, forecast) through request queue
- * Args:
- *   c: Hono context
- *   env: Worker environment with KV namespace
- *   method: HTTP method
- *   path: Backend path
- * Returns: Response with queueId for polling or immediate result if processed
- * Side effects: Stores request in KV-based queue under user ID
- */
-export async function proxyToBackendQueued(c, env, method, path) {
-    const userId = c.get('userId') || 'anonymous';
-    const queue = new RequestQueue(env);
-    try {
-        const body = method !== 'GET' && method !== 'HEAD' ? await c.req.text() : undefined;
-        // Add request to queue
-        const queueId = await queue.enqueue(userId, path, method, body);
-        console.log(`[PROXY QUEUED] Request ${queueId} queued for user ${userId}`);
-        // Return queue info for client to poll
-        return c.json({
-            status: 'queued',
-            queueId,
-            pollUrl: `/queue/status/${queueId}`,
-            message: 'Request queued for processing. Use queueId to check status.',
-        }, 202 // Accepted status code for async operations
-        );
-    }
-    catch (error) {
-        console.error('[PROXY QUEUE ERROR]', error);
-        return c.json({
-            error: 'Failed to queue request',
-            details: error instanceof Error ? error.message : String(error),
-        }, 503);
-    }
-}
-/**
- * Process next request from user's queue
- * Purpose: Worker background task to process queued requests
- * Args:
- *   env: Worker environment
- *   userId: User identifier
- * Returns: Object with processing result
- * Side effects: Updates request status and stores result
- */
-export async function processQueuedRequest(env, userId) {
-    const queue = new RequestQueue(env);
-    const myaLlmUrl = env.MYA_LLM_URL;
-    const llmApiToken = env.LLM_API_TOKEN;
-    if (!myaLlmUrl) {
-        throw new Error('Backend service not configured');
-    }
-    if (!llmApiToken) {
-        throw new Error('LLM API token not configured for backend authentication');
-    }
-    try {
-        // Get next request
-        const request = await queue.dequeue(userId);
-        if (!request) {
-            return { status: 'no_requests', message: 'No pending requests in queue' };
-        }
-        // Mark as processing
-        await queue.markProcessing(userId, request.id);
-        console.log(`[QUEUE PROCESSOR] Processing request ${request.id} for user ${userId}`);
-        // Forward to backend
-        const url = new URL(myaLlmUrl);
-        url.pathname = request.path;
-        const requestInit = {
-            method: request.method,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-User-Id': userId,
-                'X-API-Token': llmApiToken,
-            },
-        };
-        if (request.body) {
-            requestInit.body = request.body;
-        }
-        const response = await fetch(url.toString(), requestInit);
-        const responseBody = await response.text();
-        const result = JSON.parse(responseBody || '{}');
-        // Mark as completed
-        await queue.markCompleted(userId, request.id, result);
-        // Remove from queue
-        await queue.removeFromQueue(userId, request.id);
-        console.log(`[QUEUE PROCESSOR] Request ${request.id} completed successfully`);
-        return {
-            status: 'processed',
-            queueId: request.id,
-            result,
-        };
-    }
-    catch (error) {
-        console.error('[QUEUE PROCESSOR ERROR]', error);
-        // Mark as failed but keep in queue for retrieval
-        if (error instanceof Error) {
-            await queue.markFailed(userId, error.requestId || 'unknown', error.message);
-        }
-        throw error;
     }
 }
 export function createRouteHandlers(env) {
     return {
-        analyzePost: async (c) => proxyToBackend(c, env, 'POST', '/api/v1/analyze'),
+        analyzePost: async (c) => proxyToBackend(c, env, 'POST', '/analyze'),
         analyzeGet: async (c) => {
             const jobId = c.req.param('jobId');
-            return proxyToBackend(c, env, 'GET', `/api/v1/analyze/${jobId}`);
+            return proxyToBackend(c, env, 'GET', `/analyze/${jobId}`);
         },
         forecastPost: async (c) => proxyToBackend(c, env, 'POST', '/api/v1/forecast'),
         dailyReportGet: async (c) => proxyToBackend(c, env, 'GET', '/api/v1/daily-report'),

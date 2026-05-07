@@ -17,7 +17,7 @@ export function getCLIConfig() {
     }
     else {
         // Production environment (default) - use production worker
-        apiUrl = 'https://mya-production.monibee-fudgekin.workers.dev';
+        apiUrl = 'https://mya.monibee-fudgekin.workers.dev';
     }
     return {
         apiUrl,

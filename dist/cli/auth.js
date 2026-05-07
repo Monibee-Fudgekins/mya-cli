@@ -1,56 +1,44 @@
 /**
  * Module: CLI Authentication
  * Purpose: Handle user login, OTP verification, and session validation
- * Dependencies: chalk, ora, inquirer (CLI UI), apiRequest, initializeServices, session management
+ * Dependencies: chalk, ora, inquirer (CLI UI), apiRequest, session management
  * Used by: cli-http.ts
- *
- * Error Handling Improvements:
- * - Added specific troubleshooting for HTTP 503 errors from backend
- * - Detects when MYA_LLM_URL environment variable is not configured
- * - Provides clear guidance to users when backend is unavailable
- * - Reports non-JSON responses from backend gracefully
  */
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
 import { apiRequest, checkServiceAvailability } from './api-client.js';
-import { loadSession, saveSession, clearSession } from './session.js';
-import { initializeServices } from '../shared/init.js';
-export async function processAuth(email) {
+import { saveSession, clearSession, loadSession } from './session.js';
+import { createSpinner } from './spinner.js';
+async function processAuth(email) {
     return apiRequest('/auth', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
     });
 }
-export async function verifyOtpAndCreateSession(email, otpCode, methodId) {
-    return apiRequest('/verify-otp', {
+async function verifyOtpAndCreateSession(email, otpCode, methodId) {
+    return apiRequest('/auth/verify', {
         method: 'POST',
-        body: JSON.stringify({ email, otpCode, methodId }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp_code: otpCode, method_id: methodId }),
     });
 }
-export async function validateSession(_userId, _machineId, _sessionId) {
+export async function validateSession(userId, machineId, sessionId) {
     try {
-        const session = loadSession();
-        if (!session || !session.sessionJwt) {
-            return false;
-        }
         const result = await apiRequest('/auth/verify', {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${session.sessionJwt}`,
-            },
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, machineId, sessionId }),
         });
-        return result.valid;
+        return result && result.success === true;
     }
     catch {
         return false;
     }
 }
 export async function authenticateUser() {
-    const spinner = ora('Checking service availability...').start();
+    const spinner = ora();
     try {
         // Check if backend is reachable before proceeding
         const isServiceAvailable = await checkServiceAvailability();
@@ -64,7 +52,6 @@ export async function authenticateUser() {
             return null;
         }
         spinner.text = 'Initializing authentication...';
-        await initializeServices(apiRequest);
         spinner.succeed('Services initialized');
         const { email } = await inquirer.prompt([
             {
@@ -79,6 +66,45 @@ export async function authenticateUser() {
                 },
             },
         ]);
+        // NEW: Check for existing session in KV via backend
+        spinner.start('Checking for existing session...');
+        let kvSession = null;
+        // Try to get local machineId if available
+        let machineId = '';
+        try {
+            const os = await import('os');
+            machineId = os.hostname?.() || '';
+        }
+        catch (error) {
+            console.warn(chalk.yellow('Unable to read machine hostname'), error);
+        }
+        try {
+            kvSession = await apiRequest('/auth/session-by-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, machineId }),
+            });
+        }
+        catch {
+            kvSession = null;
+        }
+        if (kvSession && kvSession.success && kvSession.sessionJwt && kvSession.sessionToken) {
+            spinner.succeed('Existing session found. Logging in...');
+            const session = {
+                userId: kvSession.userId || '',
+                machineId: kvSession.machineId || '',
+                sessionId: kvSession.sessionToken || '',
+                sessionJwt: kvSession.sessionJwt || '',
+                email,
+                isActive: true,
+                createdAt: kvSession.createdAt || Date.now(),
+                lastActivity: Date.now(),
+                expiresAt: kvSession.expiresAt || (Date.now() + (24 * 60 * 60 * 1000)),
+            };
+            saveSession(session);
+            return session;
+        }
+        spinner.text = 'No existing session found. Proceeding with OTP authentication...';
         spinner.start('Sending authentication code...');
         let authResult;
         try {
@@ -164,7 +190,7 @@ export async function authenticateUser() {
 export async function ensureAuthenticated() {
     let session = loadSession();
     if (session) {
-        const spinner = ora('Validating session...').start();
+        const spinner = createSpinner('Validating session...').start();
         try {
             const isValid = await validateSession(session.userId, session.machineId, session.sessionId);
             if (isValid) {
